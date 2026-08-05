@@ -12,3 +12,12 @@ CMakeLists.txt
 kangaroo
 cmake-build-debug/
 *.prf
+
+# Windows MSVC/nvcc build output (build_cpu.bat / build_gpu.bat)
+objgpu/
+*.obj
+*.exe
+
+# run artifacts
+*.kcp
+*.log

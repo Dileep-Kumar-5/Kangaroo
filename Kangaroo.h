@@ -96,7 +96,7 @@ typedef struct {
   uint32_t kIdx;
   uint32_t h;
   int128_t x;
-  int128_t d;
+  int256_t d;
 
 } DP;
 
@@ -117,9 +117,12 @@ typedef struct {
 } DP_CACHE;
 
 // Work file type
-#define HEADW  0xFA6A8001  // Full work file
-#define HEADK  0xFA6A8002  // Kangaroo only file
-#define HEADKS 0xFA6A8003  // Compressed Kangaroo only file
+// Bumped for the 256bit distance field: ENTRY grew from 32 to 48 bytes, so a
+// pre-existing work file read with the new layout would silently desynchronise
+// and produce garbage DPs. Old files are now rejected by magic instead.
+#define HEADW  0xFA6A8011  // Full work file (256bit distance)
+#define HEADK  0xFA6A8012  // Kangaroo only file (256bit distance)
+#define HEADKS 0xFA6A8013  // Compressed Kangaroo only file (256bit distance)
 
 // Number of Hash entry per partition
 #define H_PER_PART (HASH_SIZE / MERGE_PART)
@@ -165,7 +168,7 @@ private:
   void SetDP(int size);
   void CreateHerd(int nbKangaroo,Int *px, Int *py, Int *d, int firstType,bool lock=true);
   void CreateJumpTable();
-  bool AddToTable(uint64_t h,int128_t *x,int128_t *d);
+  bool AddToTable(uint64_t h,int128_t *x,int256_t *d);
   bool AddToTable(Int *pos,Int *dist,uint32_t kType);
   bool SendToServer(std::vector<ITEM> &dp,uint32_t threadId,uint32_t gpuId);
   bool CheckKey(Int d1,Int d2,uint8_t type);
@@ -181,7 +184,7 @@ private:
   void SaveWork(uint64_t totalCount,double totalTime,TH_PARAM *threads,int nbThread);
   void SaveServerWork();
   void FetchWalks(uint64_t nbWalk,Int *x,Int *y,Int *d);
-  void FetchWalks(uint64_t nbWalk,std::vector<int128_t>& kangs,Int* x,Int* y,Int* d);
+  void FetchWalks(uint64_t nbWalk,std::vector<int256_t>& kangs,Int* x,Int* y,Int* d);
   void FectchKangaroos(TH_PARAM *threads);
   FILE *ReadHeader(std::string fileName,uint32_t *version,int type);
   bool  SaveHeader(std::string fileName,FILE* f,int type,uint64_t totalCount,double totalTime);
@@ -204,8 +207,8 @@ private:
   void InitSocket();
   void WaitForServer();
   int32_t GetServerStatus();
-  bool SendKangaroosToServer(std::string& fileName,std::vector<int128_t>& kangs);
-  bool GetKangaroosFromServer(std::string& fileName,std::vector<int128_t>& kangs);
+  bool SendKangaroosToServer(std::string& fileName,std::vector<int256_t>& kangs);
+  bool GetKangaroosFromServer(std::string& fileName,std::vector<int256_t>& kangs);
 
 #ifdef WIN64
   HANDLE ghMutex;

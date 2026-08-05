@@ -22,13 +22,16 @@
 #include "../Constants.h"
 #include "../SECPK1/SECP256k1.h"
 
+// Words per kangaroo in device memory: px[4] + py[4] + dist[4] (+ lastJump).
+// dist was 2 words (126bit distance, 125bit interval cap); it is 4 words now.
 #ifdef USE_SYMMETRY
-#define KSIZE 11
+#define KSIZE 13
 #else
-#define KSIZE 10
+#define KSIZE 12
 #endif
 
-#define ITEM_SIZE   56
+// x[8] + d[8] + kIdx[2], in uint32
+#define ITEM_SIZE   72
 #define ITEM_SIZE32 (ITEM_SIZE/4)
 
 typedef struct {

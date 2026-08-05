@@ -57,7 +57,7 @@ uint32_t Kangaroo::CheckHash(uint32_t h,uint32_t nbItem,HashTable* hT,FILE* f) {
     items = (ENTRY*)malloc(nbItem * sizeof(ENTRY));
 
     for(uint32_t i = 0; i < nbItem; i++) {
-      ::fread(items+i,32,1,f);
+      ::fread(items+i,ENTRY_SIZE,1,f);
       e = items + i;
       Int dist;
       uint32_t kType;
