@@ -409,6 +409,9 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
 
       free(KBuff);
 
+      // checksum is defined mod 2^256: only 32 bytes go on the wire, and the
+      // distance flags at b254/b255 make a herd overflow past 256 bits.
+      checkSum.bits64[4] = 0;
       PUT("checkSum",p->clientSock,checkSum.bits64,32,ntimeout);
 
       ::fclose(f);
@@ -496,6 +499,9 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
       K.SetInt32(0);
       GET("checksum",p->clientSock,K.bits64,32,ntimeout);
 
+      // checksum is defined mod 2^256: only 32 bytes go on the wire, and the
+      // distance flags at b254/b255 make a herd overflow past 256 bits.
+      checkSum.bits64[4] = 0;
       if(!K.IsEqual(&checkSum)) {
         ::printf("\nWarning, Kangaroo backup wrong checksum %s\n",fileName);
       } else {
@@ -1059,6 +1065,9 @@ bool Kangaroo::GetKangaroosFromServer(std::string& fileName,std::vector<int256_t
     K.SetInt32(0);
     GET("checksum",serverConn,K.bits64,32,ntimeout);
 
+    // checksum is defined mod 2^256: only 32 bytes go on the wire, and the
+    // distance flags at b254/b255 make a herd overflow past 256 bits.
+    checkSum.bits64[4] = 0;
     if(!K.IsEqual(&checkSum)) {
       ::printf("\nWarning, Kangaroo backup wrong checksum %s\n",fileName.c_str());
       return false;
@@ -1135,6 +1144,9 @@ bool Kangaroo::SendKangaroosToServer(std::string& fileName,std::vector<int256_t>
 
     free(KBuff);
 
+    // checksum is defined mod 2^256: only 32 bytes go on the wire, and the
+    // distance flags at b254/b255 make a herd overflow past 256 bits.
+    checkSum.bits64[4] = 0;
     PUT("checksum",serverConn,checkSum.bits64,32,ntimeout);
 
   }
