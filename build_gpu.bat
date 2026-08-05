@@ -13,12 +13,18 @@ set "MSVC_DIR=C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\To
 call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat" >nul
 if errorlevel 1 (echo VCVARS FAILED & exit /b 1)
 
-for /f "delims=" %%i in ('dir /b /o-n "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*" 2^>nul') do (
-  if not defined CUDA_VER set CUDA_VER=%%i
+rem Prefer a local extracted toolkit (redist zips, no admin install), else
+rem the system install under Program Files.
+set "CUDA_PATH=%~dp0..\cuda-toolkit"
+if not exist "%CUDA_PATH%\bin\nvcc.exe" (
+  for /f "delims=" %%i in ('dir /b /o-n "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*" 2^>nul') do (
+    if not defined CUDA_VER set CUDA_VER=%%i
+  )
+  if not defined CUDA_VER (echo CUDA TOOLKIT NOT FOUND & exit /b 1)
+  set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\!CUDA_VER!"
 )
-if not defined CUDA_VER (echo CUDA TOOLKIT NOT FOUND & exit /b 1)
-set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\%CUDA_VER%"
-echo Using %CUDA_VER%, sm_%CCAP%
+if not exist "%CUDA_PATH%\bin\nvcc.exe" (echo nvcc NOT FOUND under %CUDA_PATH% & exit /b 1)
+echo Using "%CUDA_PATH%", sm_%CCAP%
 
 rem separate obj dir: the CPU build left non-WITHGPU objects in obj\
 if not exist objgpu mkdir objgpu

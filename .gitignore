@@ -21,3 +21,6 @@ objgpu/
 # run artifacts
 *.kcp
 *.log
+
+# CUDA runtime staged next to the binary by build_gpu.bat
+cudart64_*.dll

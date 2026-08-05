@@ -364,11 +364,18 @@ void GPUEngine::PrintCudaInfo() {
 
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp,i);
+
+    // cudaDeviceProp::computeMode was removed in CUDA 13; the device
+    // attribute still exists, so query that instead of the struct field.
+    int computeMode = 0;
+    cudaDeviceGetAttribute(&computeMode,cudaDevAttrComputeMode,i);
+    if(computeMode < 0 || computeMode > 3) computeMode = 4;   // "Unknown"
+
     printf("GPU #%d %s (%dx%d cores) (Cap %d.%d) (%.1f MB) (%s)\n",
       i,deviceProp.name,deviceProp.multiProcessorCount,
       _ConvertSMVer2Cores(deviceProp.major,deviceProp.minor),
       deviceProp.major,deviceProp.minor,(double)deviceProp.totalGlobalMem / 1048576.0,
-      sComputeMode[deviceProp.computeMode]);
+      sComputeMode[computeMode]);
 
   }
 
