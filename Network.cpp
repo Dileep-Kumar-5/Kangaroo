@@ -44,9 +44,14 @@ static SOCKET serverSock = 0;
 
 #define SERVER_VERSION 3
 
-// Bumped with the 256bit distance: DP grew 40 -> 56 bytes and the kangaroo
-// block grew 16 -> 32 bytes per kangaroo. An old peer would misparse both.
+// The protocol magic depends on the distance width: a WIDE_DIST build sends
+// 56-byte DPs and 32-byte kangaroo blocks, a default build 40 and 16. A
+// mismatched peer must fail the handshake rather than misparse every packet.
+#ifdef WIDE_DIST
 #define SERVER_HEADER 0x67DEDDD1
+#else
+#define SERVER_HEADER 0x67DEDDC1
+#endif
 
 #define KANG_PER_BLOCK 2048
 
@@ -338,7 +343,7 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
       uint64_t nbKangaroo = 0;
       uint32_t strSize;
       char fileName[256];
-      int256_t* KBuff;
+      dist_t* KBuff;
       uint32_t nbK;
       uint32_t header = HEADKS;
       uint32_t version = 0;
@@ -380,7 +385,7 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
       PUT("nbKangaroo",p->clientSock,&nbKangaroo,sizeof(uint64_t),ntimeout);
 
       checkSum.SetInt32(0);
-      KBuff = (int256_t*)malloc(KANG_PER_BLOCK * sizeof(int256_t));
+      KBuff = (dist_t*)malloc(KANG_PER_BLOCK * sizeof(dist_t));
 
       while(nbKangaroo > 0) {
 
@@ -391,17 +396,15 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
         }
 
         for(uint32_t k = 0; k < nbK; k++) {
-          ::fread(&KBuff[k],32,1,f);
+          ::fread(&KBuff[k],sizeof(dist_t),1,f);
           // Checksum
           K.SetInt32(0);
-          K.bits64[1] = KBuff[k].i64[1];
-          K.bits64[0] = KBuff[k].i64[0];
-          K.bits64[2] = KBuff[k].i64[2];
-          K.bits64[3] = KBuff[k].i64[3];
+          for(int w = 0; w < DIST_WORDS; w++)
+            K.bits64[w] = KBuff[k].i64[w];
           checkSum.Add(&K);
         }
 
-        PUTFREE("packet",p->clientSock,KBuff,nbK * 32,ntimeout,KBuff);
+        PUTFREE("packet",p->clientSock,KBuff,nbK * (8*DIST_WORDS),ntimeout,KBuff);
 
         nbKangaroo -= nbK;
 
@@ -429,7 +432,7 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
       uint32_t fileNameSize;
       char fileNameTmp[264];
       char fileName[256];
-      int256_t *KBuff;
+      dist_t *KBuff;
       uint32_t nbK;
       uint32_t header = HEADKS;
       uint32_t version = 0;
@@ -466,7 +469,7 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
 
       checkSum.SetInt32(0);
 
-      KBuff = (int256_t *)malloc(KANG_PER_BLOCK*sizeof(int256_t));
+      KBuff = (dist_t *)malloc(KANG_PER_BLOCK*sizeof(dist_t));
 
       while(nbKangaroo>0) {
 
@@ -476,16 +479,14 @@ bool Kangaroo::HandleRequest(TH_PARAM *p) {
           nbK = (uint32_t)nbKangaroo;
         }
 
-        GETFREE("packet",p->clientSock,KBuff,nbK * 32,ntimeout,KBuff);
+        GETFREE("packet",p->clientSock,KBuff,nbK * (8*DIST_WORDS),ntimeout,KBuff);
 
         for(uint32_t k = 0; k < nbK; k++) {
-          ::fwrite(&KBuff[k],32,1,f);
+          ::fwrite(&KBuff[k],sizeof(dist_t),1,f);
           // Checksum
           K.SetInt32(0);
-          K.bits64[1] = KBuff[k].i64[1];
-          K.bits64[0] = KBuff[k].i64[0];
-          K.bits64[2] = KBuff[k].i64[2];
-          K.bits64[3] = KBuff[k].i64[3];
+          for(int w = 0; w < DIST_WORDS; w++)
+            K.bits64[w] = KBuff[k].i64[w];
           checkSum.Add(&K);
         }
 
@@ -708,7 +709,7 @@ void Kangaroo::RunServer() {
   }
   SetDP(initDPSize);
 
-  if(sizeof(DP) != 56) {
+  if(sizeof(DP) != (int)(8 + 16 + (8*DIST_WORDS))) {
     ::printf("Error: Invalid DP size struct\n");
     exit(-1);
   }
@@ -992,14 +993,14 @@ void Kangaroo::WaitForServer() {
 }
 
 // Get Kangaroo from server
-bool Kangaroo::GetKangaroosFromServer(std::string& fileName,std::vector<int256_t>& kangs) {
+bool Kangaroo::GetKangaroosFromServer(std::string& fileName,std::vector<dist_t>& kangs) {
 
   int nbRead;
   int nbWrite;
   uint32_t fileNameSize = (uint32_t)fileName.length();
   uint64_t nbKangaroo = 0;
   uint32_t nbK;
-  int256_t* KBuff;
+  dist_t* KBuff;
   Int checkSum;
 
   WaitForServer();
@@ -1023,7 +1024,7 @@ bool Kangaroo::GetKangaroosFromServer(std::string& fileName,std::vector<int256_t
     uint64_t point = (nbKangaroo / KANG_PER_BLOCK) / 32;
     uint64_t pointPrint = 0;
 
-    KBuff = (int256_t*)malloc(KANG_PER_BLOCK * sizeof(int256_t));
+    KBuff = (dist_t*)malloc(KANG_PER_BLOCK * sizeof(dist_t));
     kangs.reserve(nbKangaroo);
 
     checkSum.SetInt32(0);
@@ -1041,17 +1042,15 @@ bool Kangaroo::GetKangaroosFromServer(std::string& fileName,std::vector<int256_t
         nbK = (uint32_t)nbKangaroo;
       }
 
-      GETFREE("packet",serverConn,KBuff,nbK * 32,ntimeout,KBuff);
+      GETFREE("packet",serverConn,KBuff,nbK * (8*DIST_WORDS),ntimeout,KBuff);
 
       for(uint32_t k = 0; k < nbK; k++) {
         kangs.push_back(KBuff[k]);
         // Checksum
         Int K;
         K.SetInt32(0);
-        K.bits64[1] = KBuff[k].i64[1];
-        K.bits64[0] = KBuff[k].i64[0];
-        K.bits64[2] = KBuff[k].i64[2];
-        K.bits64[3] = KBuff[k].i64[3];
+        for(int w = 0; w < DIST_WORDS; w++)
+          K.bits64[w] = KBuff[k].i64[w];
         checkSum.Add(&K);
       }
 
@@ -1081,14 +1080,14 @@ bool Kangaroo::GetKangaroosFromServer(std::string& fileName,std::vector<int256_t
 }
 
 // Send Kangaroo to Server
-bool Kangaroo::SendKangaroosToServer(std::string& fileName,std::vector<int256_t>& kangs) {
+bool Kangaroo::SendKangaroosToServer(std::string& fileName,std::vector<dist_t>& kangs) {
 
   int nbWrite;
   uint32_t fileNameSize = (uint32_t)fileName.length();
   uint64_t nbKangaroo = kangs.size();
   uint64_t pos;
   uint32_t nbK;
-  int256_t *KBuff;
+  dist_t *KBuff;
   Int checkSum;
 
   WaitForServer();
@@ -1105,7 +1104,7 @@ bool Kangaroo::SendKangaroosToServer(std::string& fileName,std::vector<int256_t>
     PUT("fileName",serverConn,fileName.c_str(),fileNameSize,ntimeout);
     PUT("nbKangaroo",serverConn,&nbKangaroo,sizeof(uint64_t),ntimeout);
 
-    KBuff = (int256_t*)malloc(KANG_PER_BLOCK * sizeof(int256_t));
+    KBuff = (dist_t*)malloc(KANG_PER_BLOCK * sizeof(dist_t));
 
     checkSum.SetInt32(0);
     pos = 0;
@@ -1124,19 +1123,17 @@ bool Kangaroo::SendKangaroosToServer(std::string& fileName,std::vector<int256_t>
       }
 
       for(uint32_t k = 0; k < nbK; k++) {
-        memcpy(&KBuff[k],&kangs[pos],32);
+        memcpy(&KBuff[k],&kangs[pos],sizeof(dist_t));
         pos++;
         // Checksum
         Int K;
         K.SetInt32(0);
-        K.bits64[1] = KBuff[k].i64[1];
-        K.bits64[0] = KBuff[k].i64[0];
-        K.bits64[2] = KBuff[k].i64[2];
-        K.bits64[3] = KBuff[k].i64[3];
+        for(int w = 0; w < DIST_WORDS; w++)
+          K.bits64[w] = KBuff[k].i64[w];
         checkSum.Add(&K);
       }
 
-      PUTFREE("packet",serverConn,KBuff,nbK * 32,ntimeout,KBuff);
+      PUTFREE("packet",serverConn,KBuff,nbK * (8*DIST_WORDS),ntimeout,KBuff);
 
       nbKangaroo -= nbK;
 
@@ -1176,7 +1173,7 @@ bool Kangaroo::SendToServer(std::vector<ITEM> &dps,uint32_t threadId,uint32_t gp
     for(uint32_t i = 0; i<nbDP; i++) {
 
       int128_t X;
-      int256_t D;
+      dist_t D;
       uint64_t h;
       HashTable::Convert(&dps[i].x,&dps[i].d,dps[i].kIdx % 2,&h,&X,&D);
 
@@ -1184,10 +1181,8 @@ bool Kangaroo::SendToServer(std::vector<ITEM> &dps,uint32_t threadId,uint32_t gp
       dp[i].h = (uint32_t)h;
       dp[i].x.i64[0] = X.i64[0];
       dp[i].x.i64[1] = X.i64[1];
-      dp[i].d.i64[0] = D.i64[0];
-      dp[i].d.i64[1] = D.i64[1];
-      dp[i].d.i64[2] = D.i64[2];
-      dp[i].d.i64[3] = D.i64[3];
+      for(int w = 0; w < DIST_WORDS; w++)
+        dp[i].d.i64[w] = D.i64[w];
 
     }
 

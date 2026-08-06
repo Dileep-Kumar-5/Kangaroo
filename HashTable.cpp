@@ -55,23 +55,22 @@ uint64_t HashTable::GetNbItem() {
 
 }
 
-ENTRY *HashTable::CreateEntry(int128_t *x,int256_t *d) {
+ENTRY *HashTable::CreateEntry(int128_t *x,dist_t *d) {
 
   ENTRY *e = (ENTRY *)malloc(sizeof(ENTRY));
   e->x.i64[0] = x->i64[0];
   e->x.i64[1] = x->i64[1];
-  e->d.i64[0] = d->i64[0];
-  e->d.i64[1] = d->i64[1];
-  e->d.i64[2] = d->i64[2];
-  e->d.i64[3] = d->i64[3];
+  for(int i = 0; i < DIST_WORDS; i++)
+    e->d.i64[i] = d->i64[i];
   return e;
 
 }
 
-bool HashTable::sameDist(int256_t *a,int256_t *b) {
+bool HashTable::sameDist(dist_t *a,dist_t *b) {
 
-  return (a->i64[0] == b->i64[0]) && (a->i64[1] == b->i64[1]) &&
-         (a->i64[2] == b->i64[2]) && (a->i64[3] == b->i64[3]);
+  for(int i = 0; i < DIST_WORDS; i++)
+    if(a->i64[i] != b->i64[i]) return false;
+  return true;
 
 }
 
@@ -82,7 +81,7 @@ bool HashTable::sameDist(int256_t *a,int256_t *b) {
   E[h].items[st] = entry;                  \
   E[h].nbItem++;}
 
-void HashTable::Convert(Int *x,Int *d,uint32_t type,uint64_t *h,int128_t *X,int256_t *D) {
+void HashTable::Convert(Int *x,Int *d,uint32_t type,uint64_t *h,int128_t *X,dist_t *D) {
 
   uint64_t sign = 0;
   uint64_t type64 = (uint64_t)type << 62;
@@ -99,21 +98,27 @@ void HashTable::Convert(Int *x,Int *d,uint32_t type,uint64_t *h,int128_t *X,int2
     sign = DIST_SIGN_MASK;
   }
 
-  // The magnitude has to fit in b253..b0. The original code masked the excess
-  // away, which produced a valid-looking entry and, on collision, a WRONG
-  // private key with no error. Refuse loudly instead.
-  if(N.bits64[3] & 0xC000000000000000ULL) {
+  // The magnitude has to fit in DIST_MAG_BITS. The original code masked the
+  // excess away, which produced a valid-looking entry and, on collision, a
+  // WRONG private key with no error. Refuse loudly instead.
+  bool overflow = (N.bits64[DIST_WORDS - 1] & (DIST_SIGN_MASK | DIST_TYPE_MASK)) != 0;
+  for(int i = DIST_WORDS; i < NB64BLOCK; i++)
+    if(N.bits64[i]) overflow = true;
+
+  if(overflow) {
     ::printf("\nHashTable::Convert: travelled distance exceeds %d bits.\n"
              "Interval is too large for the DP entry format (max %d bits).\n"
+#if DIST_WORDS == 2
+             "Rebuild with -DWIDE_DIST for intervals up to 253 bits.\n"
+#endif
              "Aborting rather than storing a truncated distance.\n",
              DIST_MAG_BITS,MAX_INTERVAL_BITS);
     exit(-1);
   }
 
-  D->i64[0] = N.bits64[0];
-  D->i64[1] = N.bits64[1];
-  D->i64[2] = N.bits64[2];
-  D->i64[3] = (N.bits64[3] & DIST_MAG_MASK) | sign | type64;
+  for(int i = 0; i < DIST_WORDS; i++)
+    D->i64[i] = N.bits64[i];
+  D->i64[DIST_WORDS - 1] = (D->i64[DIST_WORDS - 1] & DIST_MAG_MASK) | sign | type64;
 
   *h = (x->bits64[2] & HASH_MASK);
 
@@ -240,7 +245,7 @@ int HashTable::MergeH(uint32_t h,FILE* f1,FILE* f2,FILE* fd,uint32_t* nbDP,uint3
 int HashTable::Add(Int *x,Int *d,uint32_t type) {
 
   int128_t X;
-  int256_t D;
+  dist_t D;
   uint64_t h;
   Convert(x,d,type,&h,&X,&D);
   ENTRY* e = CreateEntry(&X,&D);
@@ -258,24 +263,22 @@ void HashTable::ReAllocate(uint64_t h,uint32_t add) {
 
 }
 
-int HashTable::Add(uint64_t h,int128_t *x,int256_t *d) {
+int HashTable::Add(uint64_t h,int128_t *x,dist_t *d) {
 
   ENTRY *e = CreateEntry(x,d);
   return Add(h,e);
 
 }
 
-void HashTable::CalcDistAndType(int256_t d,Int* kDist,uint32_t* kType) {
+void HashTable::CalcDistAndType(dist_t d,Int* kDist,uint32_t* kType) {
 
-  *kType = (d.i64[3] & DIST_TYPE_MASK) != 0;
-  int sign = (d.i64[3] & DIST_SIGN_MASK) != 0;
-  d.i64[3] &= DIST_MAG_MASK;
+  *kType = (d.i64[DIST_WORDS - 1] & DIST_TYPE_MASK) != 0;
+  int sign = (d.i64[DIST_WORDS - 1] & DIST_SIGN_MASK) != 0;
+  d.i64[DIST_WORDS - 1] &= DIST_MAG_MASK;
 
   kDist->SetInt32(0);
-  kDist->bits64[0] = d.i64[0];
-  kDist->bits64[1] = d.i64[1];
-  kDist->bits64[2] = d.i64[2];
-  kDist->bits64[3] = d.i64[3];
+  for(int i = 0; i < DIST_WORDS; i++)
+    kDist->bits64[i] = d.i64[i];
   if(sign) kDist->ModNegK1order();
 
 }
@@ -403,7 +406,7 @@ void HashTable::SaveTable(FILE* f,uint32_t from,uint32_t to,bool printPoint) {
     fwrite(&E[h].maxItem,sizeof(uint32_t),1,f);
     for(uint32_t i = 0; i < E[h].nbItem; i++) {
       fwrite(&(E[h].items[i]->x),sizeof(int128_t),1,f);
-      fwrite(&(E[h].items[i]->d),sizeof(int256_t),1,f);
+      fwrite(&(E[h].items[i]->d),sizeof(dist_t),1,f);
       if(printPoint) {
         pointPrint++;
         if(pointPrint > point) {
@@ -473,7 +476,7 @@ void HashTable::LoadTable(FILE* f,uint32_t from,uint32_t to) {
     for(uint32_t i = 0; i < E[h].nbItem; i++) {
       ENTRY* e = (ENTRY*)malloc(sizeof(ENTRY));
       fread(&(e->x),sizeof(int128_t),1,f);
-      fread(&(e->d),sizeof(int256_t),1,f);
+      fread(&(e->d),sizeof(dist_t),1,f);
       E[h].items[i] = e;
     }
 

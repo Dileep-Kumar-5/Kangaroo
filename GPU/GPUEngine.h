@@ -22,17 +22,18 @@
 #include "../Constants.h"
 #include "../SECPK1/SECP256k1.h"
 
-// Words per kangaroo in device memory: px[4] + py[4] + dist[4] (+ lastJump).
-// dist was 2 words (126bit distance, 125bit interval cap); it is 4 words now.
+// Words per kangaroo in device memory: px[4] + py[4] + dist[DIST_WORDS]
+// (+ lastJump). DIST_WORDS is 2 by default (126bit distance, 125bit interval
+// cap) and 4 with WIDE_DIST.
 #ifdef USE_SYMMETRY
-#define KSIZE 13
+#define KSIZE (9 + DIST_WORDS)
 #else
-#define KSIZE 12
+#define KSIZE (8 + DIST_WORDS)
 #endif
 
-// x[8] + d[8] + kIdx[2], in uint32
-#define ITEM_SIZE   72
-#define ITEM_SIZE32 (ITEM_SIZE/4)
+// x[8] + d[2*DIST_WORDS] + kIdx[2], in uint32
+#define ITEM_SIZE32 (8 + 2*DIST_WORDS + 2)
+#define ITEM_SIZE   (ITEM_SIZE32*4)
 
 typedef struct {
   Int x;

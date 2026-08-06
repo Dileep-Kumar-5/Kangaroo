@@ -1,7 +1,13 @@
 # Pollard's kangaroo for SECPK1
 
 A Pollard's kangaroo interval ECDLP solver for SECP256K1 (based on VanitySearch engine).\
-**This program is limited to a 125bit interval search.**
+**By default this program is limited to a 125bit interval search.** Build with
+`-DWIDE_DIST` (or uncomment `WIDE_DIST` in `Constants.h`) to raise that to 253
+bits, which is what puzzle 130 and above need. See
+[Wider intervals](#wider-intervals-wide_dist) below for the trade-offs.
+
+Exceeding the compiled limit is refused with an error. It used to be accepted
+silently and produce a wrong private key.
 
 # Feature
 
@@ -72,6 +78,53 @@ ex
 49dccfd96dc5df56487436f5a1b18c4f5d34f65ddb48cb5effffffffffffffff
 0459A3BFDAD718C9D3FAC7C187F1139F0815AC5D923910D516E186AFDA28B221DC994327554CED887AAE5D211A2407CDD025CFC3779ECB9C9D7F2F1A1DDF3E9FF8
 0335BB25364370D4DD14A9FC2B406D398C4B53C85BE58FCC7297BD34004602EBEC
+```
+
+# Wider intervals (WIDE_DIST)
+
+The travelled distance is stored alongside each distinguished point. By default
+that field is 128 bits: the top bit is the sign, the next the kangaroo type,
+leaving 126 bits of magnitude, which caps the search interval at 125 bits.
+
+Every unsolved kangaroo-able puzzle is above that cap -- #135 is a 2^134
+interval, #140 is 2^139. To search them, build with `-DWIDE_DIST` (or uncomment
+`WIDE_DIST` in `Constants.h`) for a 256-bit field: 254 bits of magnitude,
+intervals up to 253 bits.
+
+|                        | default   | `-DWIDE_DIST` |
+|------------------------|-----------|---------------|
+| max interval           | 125 bits  | 253 bits      |
+| DP entry               | 32 bytes  | 48 bytes      |
+| kangaroo (device)      | 10 words  | 12 words      |
+| DP network packet      | 40 bytes  | 56 bytes      |
+| kangaroo transfer      | 16 bytes  | 32 bytes      |
+
+So a wide build costs about 50% more RAM for the same number of DPs, 20% more
+device memory, and measured 4-7% throughput on an RTX 3050 Laptop.
+
+Work files and the client/server protocol are **not** interchangeable between
+the two builds. The format magics differ, so a mismatched work file is rejected
+with "Not a work file" and a mismatched peer fails the handshake -- neither is
+silently misparsed. A default build reads and writes exactly the same format as
+upstream.
+
+If you exceed the compiled interval limit the program now stops:
+
+```
+HashTable::Convert: travelled distance exceeds 126 bits.
+Interval is too large for the DP entry format (max 125 bits).
+Rebuild with -DWIDE_DIST for intervals up to 253 bits.
+Aborting rather than storing a truncated distance.
+```
+
+Previously the excess bits were masked off, the entry looked valid, and a
+collision produced a wrong private key with no warning of any kind.
+
+Two scripts check the layout without needing a compiler or a GPU:
+
+```
+python tools/check_layout.py     # producer/consumer offsets, both widths
+python tools/test_distfield.py   # bit packing round-trip, both widths
 ```
 
 # Note on Time/Memory tradeoff of the DP method

@@ -20,6 +20,7 @@
 
 #include <string>
 #include <vector>
+#include "Constants.h"
 #include "SECPK1/Point.h"
 #ifdef WIN64
 #include <Windows.h>
@@ -57,30 +58,36 @@ typedef union int256_s int256_t;
 
 #define safe_free(x) if(x) {free(x);x=NULL;}
 
-// Distance field width. The sign and kangaroo-type flags live in the top two
-// bits, exactly as in the original 128bit layout, so the magnitude gets
-// b253..b0. That is 254 bits for a search that needs at most ~160, i.e. plenty
-// of headroom -- moving the flags out to a separate byte would only pad ENTRY
-// from 48 to 56 bytes and grow every DP table by 17% for nothing.
-#define DIST_MAG_BITS     254
+// Distance field width -- selected by WIDE_DIST in Constants.h. The sign and
+// kangaroo-type flags always live in the top two bits of the top word, so
+// everything below is written once and works at either width.
+#if DIST_WORDS == 4
+typedef int256_t dist_t;
 #define MAX_INTERVAL_BITS 253
-#define DIST_SIGN_MASK    0x8000000000000000ULL   // b255, in i64[3]
-#define DIST_TYPE_MASK    0x4000000000000000ULL   // b254, in i64[3]
-#define DIST_MAG_MASK     0x3FFFFFFFFFFFFFFFULL   // b253..b192, in i64[3]
+#else
+typedef int128_t dist_t;
+#define MAX_INTERVAL_BITS 125
+#endif
+
+#define DIST_MAG_BITS  (64 * DIST_WORDS - 2)
+#define DIST_SIGN_MASK 0x8000000000000000ULL   // top bit of the top word
+#define DIST_TYPE_MASK 0x4000000000000000ULL
+#define DIST_MAG_MASK  0x3FFFFFFFFFFFFFFFULL
 
 // We store only 128 (+18) bit a the x value which give a probabilty a wrong collision after 2^73 entries
 
 typedef struct {
 
   int128_t  x;    // Poisition of kangaroo (128bit LSB)
-  int256_t  d;    // Travelled distance (b255=sign b254=kangaroo type, b253..b0 distance
+  dist_t    d;    // Travelled distance: top bit sign, next bit kangaroo type,
+                  // remaining DIST_MAG_BITS the magnitude
 
 } ENTRY;
 
-// On-disk and on-wire size of one ENTRY. Hard-coded rather than sizeof() at
-// each use site so a layout change cannot silently reinterpret old files.
-#define ENTRY_SIZE 48
-static_assert(sizeof(ENTRY) == ENTRY_SIZE,"ENTRY must stay packed at 48 bytes");
+// On-disk and on-wire size of one ENTRY. Derived, then asserted, so a layout
+// change cannot silently reinterpret old files.
+#define ENTRY_SIZE (16 + 8 * DIST_WORDS)
+static_assert(sizeof(ENTRY) == ENTRY_SIZE,"ENTRY layout has padding");
 
 typedef struct {
 
@@ -96,7 +103,7 @@ public:
 
   HashTable();
   int Add(Int *x,Int *d,uint32_t type);
-  int Add(uint64_t h,int128_t *x,int256_t *d);
+  int Add(uint64_t h,int128_t *x,dist_t *d);
   int Add(uint64_t h,ENTRY *e);
   uint64_t GetNbItem();
   void Reset();
@@ -115,16 +122,16 @@ public:
   Int      kDist;
   uint32_t kType;
 
-  static void Convert(Int *x,Int *d,uint32_t type,uint64_t *h,int128_t *X,int256_t *D);
+  static void Convert(Int *x,Int *d,uint32_t type,uint64_t *h,int128_t *X,dist_t *D);
   static int MergeH(uint32_t h,FILE* f1,FILE* f2,FILE* fd,uint32_t *nbDP,uint32_t* duplicate,
                     Int* d1,uint32_t* k1,Int* d2,uint32_t* k2);
-  static void CalcDistAndType(int256_t d,Int* kDist,uint32_t* kType);
+  static void CalcDistAndType(dist_t d,Int* kDist,uint32_t* kType);
 
 private:
 
-  ENTRY *CreateEntry(int128_t *x,int256_t *d);
+  ENTRY *CreateEntry(int128_t *x,dist_t *d);
   static int compare(int128_t *i1,int128_t *i2);
-  static bool sameDist(int256_t *a,int256_t *b);
+  static bool sameDist(dist_t *a,dist_t *b);
   std::string GetStr(int128_t *i);
 
 };

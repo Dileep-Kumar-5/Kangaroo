@@ -24,6 +24,27 @@
 // Use symmetry
 //#define USE_SYMMETRY
 
+// Travelled-distance field width.
+//
+// Default (off): the original layout -- 128 bits per distance, of which
+// b127=sign, b126=kangaroo type and b125..b0 the magnitude. That caps the
+// search interval at 125 bits, and exceeding it used to corrupt keys
+// silently; it now aborts.
+//
+// Uncomment, or build with -DWIDE_DIST, for a 256-bit field (254-bit
+// magnitude, intervals up to 253 bits). Needed for puzzle 130 and above.
+// Costs: DP tables +50% RAM, device kangaroo memory +20%, DP packets +40%,
+// kangaroo transfers +100%, and roughly 4-7% throughput. Work files and the
+// client/server protocol are NOT interchangeable between the two builds --
+// the format magics differ so a mismatch is refused, not misparsed.
+//#define WIDE_DIST
+
+#ifdef WIDE_DIST
+#define DIST_WORDS 4
+#else
+#define DIST_WORDS 2
+#endif
+
 // Number of random jumps
 // Max 512 for the GPU
 #define NB_JUMP 32
