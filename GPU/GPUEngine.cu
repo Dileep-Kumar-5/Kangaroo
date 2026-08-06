@@ -121,6 +121,14 @@ int _ConvertSMVer2Cores(int major,int minor) {
     { 0x70,  64 },
     { 0x72,  64 },
     { 0x75,  64 },
+    { 0x80,  64 }, // Ampere GA100
+    { 0x86, 128 }, // Ampere GA10x
+    { 0x87, 128 }, // Ampere Orin
+    { 0x89, 128 }, // Ada Lovelace
+    { 0x90, 128 }, // Hopper
+    { 0xa0, 128 }, // Blackwell GB100
+    { 0xa1, 128 },
+    { 0xc0, 128 }, // Blackwell GB20x
     { -1, -1 } };
 
   int index = 0;
